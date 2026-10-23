@@ -10,12 +10,24 @@ filesystem or to Cloudinary.
 
 ## Running it
 
-You need Python 3.12 or newer, plus PostgreSQL and Redis. The repository root
-has a `docker-compose.yml` that brings up both with the credentials the
-defaults expect:
+`docker-compose.yml` brings up the API together with the PostgreSQL and Redis
+it needs:
 
 ```bash
-docker compose up -d                # postgres on 5432, redis on 6379
+cp .env.example .env                # then set DJANGO_SECRET_KEY
+docker compose up                   # api on 8000, postgres on 5432, redis on 6379
+```
+
+Migrations are applied on start by `docker-entrypoint.sh`, and the working tree
+is mounted into the container, so edits reload without a rebuild.
+
+### Without a container
+
+You need Python 3.12 or newer. The two backing services can still come from
+compose, or from anywhere else the `.env` values point at:
+
+```bash
+docker compose up -d postgres redis
 
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
@@ -33,6 +45,25 @@ Uploads land in `backend/uploads/` and are served by Django while `DEBUG` is on,
 so the whole app runs with no third-party credentials. Point
 `MEDIA_STORAGE_BACKEND` at `apps.media.storage.cloudinary.CloudinaryStorage` and
 fill in the `CLOUDINARY_*` variables to switch providers; nothing else changes.
+
+### The deployable image
+
+`Dockerfile` has two targets over a shared dependency layer. `development` is
+what compose builds: the environment only, expecting the source to be mounted
+over it. `production` bakes the source in, collects static, drops to a non-root
+user and serves with daphne.
+
+```bash
+docker build --target production -t social-backend .
+```
+
+Compose does not use that target, because production settings enable
+`SECURE_SSL_REDIRECT` and would bounce every plain-HTTP request on `localhost`
+to https. Run it behind a TLS-terminating proxy that sets
+`X-Forwarded-Proto`, which `SECURE_PROXY_SSL_HEADER` already trusts. Set
+`MIGRATE_ON_START=0` if more than one replica starts at a time, and apply
+migrations as a release step instead. `uploads/` is container-local, so mount a
+volume over it or use the Cloudinary backend.
 
 ### Configuration
 
@@ -56,6 +87,8 @@ the ones you are likely to set.
 
 ```
 backend/
+├── Dockerfile            development and production targets
+├── docker-compose.yml    the API, PostgreSQL and Redis
 ├── config/
 │   ├── settings/     base, dev, prod
 │   ├── urls.py       every app mounted under /api/

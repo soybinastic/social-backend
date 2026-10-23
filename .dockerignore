@@ -1,0 +1,32 @@
+# Keeps secrets, build output and the host's virtualenv out of the build
+# context. .env especially: configuration is injected at run time, never baked
+# into a layer.
+.env
+.env.*
+!.env.example
+
+.git/
+.gitignore
+.venv/
+venv/
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+uploads/
+staticfiles/
+*.log
+
+.pytest_cache/
+.coverage
+htmlcov/
+
+.DS_Store
+.idea/
+.vscode/
+
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md

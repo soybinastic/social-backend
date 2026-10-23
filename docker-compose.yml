@@ -1,0 +1,80 @@
+# The API and the two services it needs, for running the backend on its own.
+#
+# The `web` service builds the development target and mounts the working tree,
+# because the production target enables SECURE_SSL_REDIRECT and would bounce
+# every plain-HTTP request to https. Build that one directly when you want the
+# deployable image:
+#
+#   docker build --target production -t social-backend .
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-social_media}
+      POSTGRES_USER: ${POSTGRES_USER:-social}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-social}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-social} -d ${POSTGRES_DB:-social_media}"]
+      interval: 5s
+      timeout: 5s
+      start_period: 5s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      start_period: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      target: development
+    # Optional, so the stack still comes up on the defaults before anyone has
+    # copied .env.example across.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Service names on the compose network rather than localhost. Real
+      # environment variables win over anything .env says, because
+      # django-environ only fills in what is not already set.
+      POSTGRES_HOST: postgres
+      REDIS_URL: redis://redis:6379/0
+      SITE_BASE_URL: http://localhost:8000
+    ports:
+      - "8000:8000"
+    volumes:
+      # The source, so edits reload without a rebuild. uploads/ and the
+      # database are reached through it on the host.
+      - .:/app
+      # Keeps the host's macOS/Windows virtualenv from shadowing the Linux one
+      # in the image.
+      - /app/.venv
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # python rather than curl, which a slim image does not carry.
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/')"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+volumes:
+  postgres-data:
